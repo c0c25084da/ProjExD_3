@@ -2,6 +2,7 @@ import os
 import random
 import sys
 import time
+import math  # 角度計算用に追加
 import pygame as pg
 
 
@@ -14,8 +15,6 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 def check_bound(obj_rct: pg.Rect) -> tuple[bool, bool]:
     """
     オブジェクトが画面内or画面外を判定し，真理値タプルを返す関数
-    引数：こうかとんや爆弾，ビームなどのRect
-    戻り値：横方向，縦方向のはみ出し判定結果（画面内：True／画面外：False）
     """
     yoko, tate = True, True
     if obj_rct.left < 0 or WIDTH < obj_rct.right:
@@ -52,6 +51,7 @@ class Bird:
         self.img = __class__.imgs[(+5, 0)]
         self.rct: pg.Rect = self.img.get_rect()
         self.rct.center = xy
+        self.dire = (+5, 0)  # こうかとんの向きを表すタプル（初期値：右向き）
 
     def change_img(self, num: int, screen: pg.Surface):
         self.img = pg.transform.rotozoom(pg.image.load(f"fig/{num}.png"), 0, 0.9)
@@ -68,6 +68,7 @@ class Bird:
             self.rct.move_ip(-sum_mv[0], -sum_mv[1])
         if not (sum_mv[0] == 0 and sum_mv[1] == 0):
             self.img = __class__.imgs[tuple(sum_mv)]
+            self.dire = tuple(sum_mv)  # 合計移動量が[0,0]でない時、向きを更新
         screen.blit(self.img, self.rct)
 
 
@@ -76,11 +77,23 @@ class Beam:
     こうかとんが放つビームに関するクラス
     """
     def __init__(self, bird: "Bird"):
-        self.img = pg.image.load(f"fig/beam.png")
+        """
+        こうかとんの向きに応じてビームを初期化する
+        """
+        # Birdのdireにアクセスし、向きをvx, vyに代入
+        self.vx, self.vy = bird.dire
+        
+        # 角度計算：math.atan2(y, x) でラジアンを求め、degreesで度数法に変換
+        angle = math.degrees(math.atan2(-self.vy, self.vx))
+        
+        # 画像の読み込みと回転
+        self.img = pg.transform.rotozoom(pg.image.load(f"fig/beam.png"), angle, 1.0)
         self.rct = self.img.get_rect()
-        self.rct.centery = bird.rct.centery
-        self.rct.left = bird.rct.right
-        self.vx, self.vy = +5, 0
+        
+        # 初期配置の計算（スライドの指示通りの数式）
+        # ビームの中心座標 = こうかとんの中心座標 + (幅or高 × 速度÷5)
+        self.rct.centerx = bird.rct.centerx + bird.rct.width * self.vx / 5
+        self.rct.centery = bird.rct.centery + bird.rct.height * self.vy / 5
 
     def update(self, screen: pg.Surface):
         self.rct.move_ip(self.vx, self.vy)
@@ -114,32 +127,21 @@ class Explosion:
     爆発エフェクトに関するクラス
     """
     def __init__(self, bomb: "Bomb"):
-        """
-        爆発画像を読み込み，位置と表示時間を設定する
-        引数 bomb：衝突した爆弾のインスタンス
-        """
         img = pg.image.load("fig/explosion.gif")
-        # 元の画像と、上下左右にフリップした画像の2つをリストに格納
         self.imgs = [img, pg.transform.flip(img, True, True)]
         self.rct = img.get_rect()
-        self.rct.center = bomb.rct.center  # 爆発した爆弾のrct.centerに座標を設定
-        self.life = 20  # 表示時間（爆発時間）を設定
+        self.rct.center = bomb.rct.center
+        self.life = 20
 
     def update(self, screen: pg.Surface):
-        """
-        爆発時間を減算し，交互に画像を切り替えて描画する
-        引数 screen：画面Surface
-        """
-        self.life -= 1  # 爆発経過時間lifeを1減算
+        self.life -= 1
         if self.life > 0:
-            # lifeの値に応じて画像を交互に切り替える（チラチラ防止の工夫）
-            img_idx = self.life % 2
-            screen.blit(self.imgs[img_idx], self.rct)
+            screen.blit(self.imgs[self.life % 2], self.rct)
 
 
 class Score:
     """
-    打ち落とした爆弾の数を表示するスコアに関するクラス
+    スコアに関するクラス
     """
     def __init__(self):
         self.fonto = pg.font.SysFont(None, 30)
@@ -162,7 +164,7 @@ def main():
     bombs = [Bomb((255, 0, 0), 10) for _ in range(NUM_OF_BOMBS)]
     score = Score()
     beams = []
-    exps = []  # Explosionインスタンス用の空リスト
+    exps = []
     clock = pg.time.Clock()
     
     while True:
@@ -184,25 +186,18 @@ def main():
                 time.sleep(1)
                 return
         
-        # 爆弾とビームの衝突判定
         for i, beam in enumerate(beams):
             for j, bomb in enumerate(bombs):
                 if beam is not None and bomb is not None:
                     if beam.rct.colliderect(bomb.rct):
-                        # 衝突したらExplosionインスタンスを生成し，リストにappend
                         exps.append(Explosion(bomb))
                         beams[i] = None
                         bombs[j] = None
                         score.score += 1
         
-        # Noneの除外処理
         beams = [b for b in beams if b is not None]
         bombs = [b for b in bombs if b is not None]
-        
-        # 画面外に出たビームの削除
         beams = [b for b in beams if check_bound(b.rct) == (True, True)]
-        
-        # 爆発時間が残っているインスタンスだけにする
         exps = [e for e in exps if e.life > 0]
 
         key_lst = pg.key.get_pressed()
@@ -212,7 +207,7 @@ def main():
             beam.update(screen)
         for bomb in bombs:
             bomb.update(screen)
-        for exp in exps:  # 爆発の描画
+        for exp in exps:
             exp.update(screen)
             
         score.update(screen)
