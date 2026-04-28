@@ -105,9 +105,8 @@ class Beam:
         ビームを速度ベクトルself.vx, self.vyに基づき移動させる
         引数 screen：画面Surface
         """
-        if check_bound(self.rct) == (True, True):
-            self.rct.move_ip(self.vx, self.vy)
-            screen.blit(self.img, self.rct)    
+        self.rct.move_ip(self.vx, self.vy)
+        screen.blit(self.img, self.rct)    
 
 
 class Bomb:
@@ -140,6 +139,7 @@ class Bomb:
         self.rct.move_ip(self.vx, self.vy)
         screen.blit(self.img, self.rct)
 
+
 class Score:
     """
     打ち落とした爆弾の数を表示するスコアに関するクラス
@@ -157,19 +157,15 @@ class Score:
         self.img = self.fonto.render(f"Score: {self.score}", 0, self.color)
         screen.blit(self.img, self.rct)
 
+
 def main():
     pg.display.set_caption("たたかえ！こうかとん")
     screen = pg.display.set_mode((WIDTH, HEIGHT))    
     bg_img = pg.image.load("fig/pg_bg.jpg")
     bird = Bird((300, 200))
-    # bomb = Bomb((255, 0, 0), 10)
     bombs = [Bomb((255, 0, 0), 10) for _ in range(NUM_OF_BOMBS)]
-    # for i in range(NUM_OF_BOMBS):
-    #     bomb = Bomb((255, 0, 0), 10)
-    #     bombs.appned(bomb)
     score = Score()
-    beam = None
-    # ゲーム初期化時にはビームは存在しない
+    beams = [] # Beamクラスのインスタンスを複数扱うための空のリストを作る
     clock = pg.time.Clock()
     tmr = 0
     while True:
@@ -177,8 +173,8 @@ def main():
             if event.type == pg.QUIT:
                 return
             if event.type == pg.KEYDOWN and event.key == pg.K_SPACE:
-                # スペースキー押下でBeamクラスのインスタンス生成
-                beam = Beam(bird)            
+                # スペースキー押下でBeamインスタンス生成，リストにappend
+                beams.append(Beam(bird))            
         screen.blit(bg_img, [0, 0])
         
         for bomb in bombs:
@@ -192,21 +188,26 @@ def main():
                 time.sleep(1)
                 return
         
-        for i, bomb in enumerate(bombs):
-            if beam is not None:
-                if beam.rct.colliderect(bomb.rct):  # 練習2：爆弾とビームの衝突判定
-                    beam = None
-                    bombs[i] = None
-                    bird.change_img(6, screen)  # 練習3：こうかとん喜びエフェクト
-                    score.score += 1
-                    pg.display.update()
-                    # time.sleep(1)
+        # リストの要素1つずつに対して爆弾と衝突判定し，衝突した要素はNoneとする
+        for i, beam in enumerate(beams):
+            for j, bomb in enumerate(bombs):
+                if beam is not None and bomb is not None:
+                    if beam.rct.colliderect(bomb.rct):
+                        beams[i] = None
+                        bombs[j] = None
+                        score.score += 1
         
-        bombs = [bomb for bomb in bombs if bomb is not None]
+        # リストに対して，要素がNoneでないものだけのリストに更新
+        beams = [b for b in beams if b is not None]
+        bombs = [b for b in bombs if b is not None]
+        
+        # 画面の範囲外に出たらリストから削除する
+        beams = [b for b in beams if check_bound(b.rct) == (True, True)]
 
         key_lst = pg.key.get_pressed()
         bird.update(key_lst, screen)
-        if beam is not None:
+        
+        for beam in beams:
             beam.update(screen)
         for bomb in bombs:
             bomb.update(screen)
